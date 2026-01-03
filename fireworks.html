@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fireworks Text Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(to bottom, #0a0a1a 0%, #1a1a3a 50%, #0a0a1a 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px 30px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .controls input {
+            padding: 14px 20px;
+            font-size: 18px;
+            border: none;
+            border-radius: 12px;
+            width: 300px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #1a1a3a;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .controls input:focus {
+            box-shadow: 0 0 20px rgba(255, 200, 100, 0.5);
+        }
+
+        .controls input::placeholder {
+            color: #888;
+        }
+
+        .controls button {
+            padding: 14px 28px;
+            font-size: 18px;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .launch-btn {
+            background: linear-gradient(135deg, #ff6b6b, #ff8e53);
+            color: white;
+        }
+
+        .launch-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 25px rgba(255, 107, 107, 0.5);
+        }
+
+        .clear-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .clear-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .instructions {
+            position: fixed;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 16px;
+            text-align: center;
+            z-index: 100;
+        }
+
+        .stars {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="stars" id="stars"></div>
+    <canvas id="canvas"></canvas>
+    
+    <div class="instructions">
+        Type your message and watch it explode in fireworks! ✨
+    </div>
+    
+    <div class="controls">
+        <input type="text" id="textInput" placeholder="Enter your text..." maxlength="20">
+        <button class="launch-btn" onclick="launchFireworks()">🎆 Launch!</button>
+        <button class="clear-btn" onclick="clearCanvas()">Clear</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let particles = [];
+        let rockets = [];
+        let animationId;
+        
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Create background stars
+        function createStars() {
+            const starsContainer = document.getElementById('stars');
+            for (let i = 0; i < 100; i++) {
+                const star = document.createElement('div');
+                star.style.cssText = `
+                    position: absolute;
+                    width: ${Math.random() * 3}px;
+                    height: ${Math.random() * 3}px;
+                    background: white;
+                    border-radius: 50%;
+                    left: ${Math.random() * 100}%;
+                    top: ${Math.random() * 100}%;
+                    opacity: ${Math.random() * 0.7 + 0.3};
+                    animation: twinkle ${Math.random() * 3 + 2}s infinite;
+                `;
+                starsContainer.appendChild(star);
+            }
+            
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes twinkle {
+                    0%, 100% { opacity: 0.3; }
+                    50% { opacity: 1; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        createStars();
+
+        // Color palettes for fireworks
+        const colorPalettes = [
+            ['#ff6b6b', '#ff8e53', '#ffd93d'],
+            ['#6bcbff', '#a78bfa', '#f472b6'],
+            ['#4ade80', '#22d3d8', '#818cf8'],
+            ['#fbbf24', '#fb923c', '#f87171'],
+            ['#c084fc', '#e879f9', '#f472b6'],
+            ['#34d399', '#2dd4bf', '#22d3ee'],
+        ];
+
+        class Particle {
+            constructor(x, y, color, velocityX, velocityY, size, isTrail = false) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.velocityX = velocityX;
+                this.velocityY = velocityY;
+                this.size = size;
+                this.alpha = 1;
+                this.decay = isTrail ? 0.03 : 0.012;
+                this.gravity = 0.04;
+                this.isTrail = isTrail;
+            }
+
+            update() {
+                this.velocityY += this.gravity;
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                this.alpha -= this.decay;
+                this.velocityX *= 0.99;
+                this.velocityY *= 0.99;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = this.isTrail ? 5 : 15;
+                ctx.shadowColor = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        class Rocket {
+            constructor(x, targetY, char, color) {
+                this.x = x;
+                this.y = canvas.height;
+                this.targetY = targetY;
+                this.char = char;
+                this.color = color;
+                this.speed = 10 + Math.random() * 4;
+                this.trail = [];
+                this.exploded = false;
+            }
+
+            update() {
+                if (!this.exploded) {
+                    this.y -= this.speed;
+                    
+                    // Add trail particles
+                    if (Math.random() > 0.3) {
+                        this.trail.push(new Particle(
+                            this.x + (Math.random() - 0.5) * 4,
+                            this.y,
+                            this.color,
+                            (Math.random() - 0.5) * 0.5,
+                            Math.random() * 2,
+                            2,
+                            true
+                        ));
+                    }
+
+                    // Check if reached target
+                    if (this.y <= this.targetY) {
+                        this.explode();
+                    }
+                }
+
+                // Update trail
+                this.trail = this.trail.filter(p => {
+                    p.update();
+                    return p.alpha > 0;
+                });
+            }
+
+            explode() {
+                this.exploded = true;
+                createTextExplosion(this.x, this.y, this.char, this.color);
+            }
+
+            draw() {
+                // Draw trail
+                this.trail.forEach(p => p.draw());
+
+                if (!this.exploded) {
+                    ctx.save();
+                    ctx.fillStyle = this.color;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+        }
+
+        function getTextPixels(char, fontSize = 140) {
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = fontSize * 1.5;
+            tempCanvas.height = fontSize * 1.5;
+            
+            tempCtx.fillStyle = 'white';
+            tempCtx.font = `bold ${fontSize}px Arial`;
+            tempCtx.textAlign = 'center';
+            tempCtx.textBaseline = 'middle';
+            tempCtx.fillText(char, tempCanvas.width / 2, tempCanvas.height / 2);
+            
+            const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const pixels = [];
+            const step = 3; // Sample every 3rd pixel for good density
+            
+            for (let y = 0; y < tempCanvas.height; y += step) {
+                for (let x = 0; x < tempCanvas.width; x += step) {
+                    const i = (y * tempCanvas.width + x) * 4;
+                    if (imageData.data[i + 3] > 128) {
+                        pixels.push({
+                            x: x - tempCanvas.width / 2,
+                            y: y - tempCanvas.height / 2
+                        });
+                    }
+                }
+            }
+            
+            return pixels;
+        }
+
+        function createTextExplosion(centerX, centerY, char, baseColor) {
+            const pixels = getTextPixels(char);
+            const palette = colorPalettes[Math.floor(Math.random() * colorPalettes.length)];
+            
+            pixels.forEach((pixel, i) => {
+                const color = palette[Math.floor(Math.random() * palette.length)];
+                const angle = Math.atan2(pixel.y, pixel.x);
+                const distance = Math.sqrt(pixel.x * pixel.x + pixel.y * pixel.y);
+                const speed = distance * 0.06 + Math.random() * 1.5;
+                
+                const particle = new Particle(
+                    centerX,
+                    centerY,
+                    color,
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed,
+                    2 + Math.random() * 2
+                );
+                
+                particles.push(particle);
+            });
+
+            // Add extra sparkle particles
+            for (let i = 0; i < 60; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 10 + 5;
+                const color = palette[Math.floor(Math.random() * palette.length)];
+                
+                particles.push(new Particle(
+                    centerX,
+                    centerY,
+                    color,
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed,
+                    1 + Math.random() * 2
+                ));
+            }
+        }
+
+        function launchFireworks() {
+            const text = document.getElementById('textInput').value.trim();
+            if (!text) return;
+
+            const chars = text.split('');
+            const spacing = Math.min(120, (canvas.width - 200) / chars.length);
+            const totalWidth = chars.length * spacing;
+            const startX = (canvas.width - totalWidth) / 2 + spacing / 2;
+            const targetY = canvas.height * 0.35;
+
+            chars.forEach((char, index) => {
+                setTimeout(() => {
+                    const x = startX + index * spacing;
+                    const palette = colorPalettes[index % colorPalettes.length];
+                    const color = palette[0];
+                    rockets.push(new Rocket(x, targetY, char, color));
+                }, index * 150);
+            });
+        }
+
+        function clearCanvas() {
+            particles = [];
+            rockets = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function animate() {
+            // Create fade effect
+            ctx.fillStyle = 'rgba(10, 10, 26, 0.12)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Update and draw rockets
+            rockets = rockets.filter(rocket => {
+                rocket.update();
+                rocket.draw();
+                return !rocket.exploded || rocket.trail.length > 0;
+            });
+
+            // Update and draw particles
+            particles = particles.filter(particle => {
+                particle.update();
+                particle.draw();
+                return particle.alpha > 0;
+            });
+
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Start animation
+        animate();
+
+        // Handle Enter key
+        document.getElementById('textInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                launchFireworks();
+            }
+        });
+
+        // Focus input on load
+        document.getElementById('textInput').focus();
+    </script>
+</body>
+</html>
